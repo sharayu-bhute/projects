@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Interview Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center h-screen p-4">
+  <div class="w-full max-w-3xl bg-white rounded-2xl shadow-lg flex flex-col h-full relative">
+
+    <!-- HEADER -->
+    <div class="p-4 bg-blue-600 text-white rounded-t-2xl text-lg font-semibold 
+      flex justify-between items-center">
+      <span>Smart Interview Assistant</span>
+
+      <button id="menuBtn" class="p-2 rounded hover:bg-blue-700 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+    </div>
+
+
+    <div id="menu_option" 
+      class="hidden absolute top-16 right-4 bg-white shadow-xl rounded-xl z-50 w-64">
+
+      <div class="p-4 border-b">
+        <p class="font-semibold">Select Difficulty:</p>
+        <select id="difficultySelect" class="border p-2 rounded w-full mt-1">
+          <option value="easy">Easy</option>
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+
+      <div class="p-4 border-b">
+        <p class="font-semibold">Select User:</p>
+        <select id="userTypeSelect" class="border p-2 rounded w-full mt-1">
+          <option value="student">Student</option>
+          <option value="interviewer">Interviewer</option>
+        </select>
+      </div>
+
+      <div class="p-4">
+        <p class="font-semibold">Select Interview Type :</p>
+        <select id="interviewTypeSelect" class="border p-2 rounded w-full mt-1">
+          <option value="Technical_Interview">Technical Interview</option>
+          <option value="HR_Interview">HR-Interview</option>
+        </select> 
+      </div>
+
+      <div class="p-4">
+        <p class="font-semibold">Upload Resume:</p>
+        <div class="flex gap-2 mt-1">
+          <input id="resumeInput" type="file" accept="application/pdf,.doc,.docx"
+            class="border p-2 rounded w-full" />
+          <button onclick="uploadResume()" 
+            class="bg-blue-600 text-white px-3 py-2 rounded-lg">
+            Upload
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="chatWindow" class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div class="text-gray-500 text-sm text-center">Upload your resume to begin.</div>
+    </div>
+
+
+    <div class="p-4 border-t flex items-center gap-2">
+      <button id="generateBtn" onclick="generateQuestion()"
+        class="bg-purple-600 text-white p-2 rounded-lg w-full" disabled>
+        Start Interview
+      </button>
+    </div>
+
+    <div class="p-4 border-t flex items-center gap-2">
+      <input id="answerInput" placeholder="Type your answer..."
+        class="border p-2 rounded w-full" />
+      <button onclick="submitAnswer()"
+        class="bg-yellow-600 text-white px-4 py-2 rounded-lg">
+        Submit
+      </button>
+    </div>
+
+  </div>
+
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+    window.extractedSkills = [];
+    window.currentQuestion = "";
+
+    function addMessage(sender, text) {
+      const chat = document.getElementById('chatWindow');
+      const bubble = document.createElement('div');
+      bubble.className = sender === 'user' ? 'flex justify-end' : 'flex justify-start';
+      bubble.innerHTML = `<div class="max-w-xs p-3 rounded-xl shadow 
+        ${sender === 'user' ? 'bg-green-500 text-white' : 'bg-gray-200 text-black'}">${text}</div>`;
+      chat.appendChild(bubble);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function uploadResume() {
+      const file = document.getElementById('resumeInput').files[0];
+      if (!file) return alert("Upload a file first");
+
+      addMessage('user', 'Uploading resume: ' + file.name);
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(`${API_BASE}/extract_skills`, { method: "POST", body: formData });
+        const result = await res.json();
+
+        if (result.error) return addMessage('bot', "Error: " + result.error);
+
+        addMessage('bot', "Skills Extracted: " + result.skills.join(", "));
+        window.extractedSkills = result.skills;
+
+        if (result.skills.length > 0) {
+          document.getElementById('generateBtn').disabled = false;
+        }
+
+      } catch (error) {
+        addMessage('bot', "Error uploading resume.");
+      }
+    }
+
+    async function generateQuestion() {
+      const diff = document.getElementById("difficultySelect").value;
+      const user= document.getElementById("userTypeSelect").value;
+      const interview= document.getElementById("interviewTypeSelect").value;
+
+      const res = await fetch(`${API_BASE}/generate_questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skills: window.extractedSkills, level: diff ,user:user, interview:interview})
+      });
+
+      const result = await res.json();
+      window.currentQuestion = result.question;
+
+      addMessage('bot', result.question);
+      document.getElementById("generateBtn").innerText = "Next Question";
+    }
+
+    async function submitAnswer() {
+      const answer = document.getElementById("answerInput").value;
+      if (!answer) return;
+
+      addMessage('user', answer);
+
+      const res = await fetch(`${API_BASE}/evaluate_answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skills: window.extractedSkills,
+          question: window.currentQuestion,
+          answer: answer
+        })
+      });
+
+      const result = await res.json();
+      addMessage('bot', `Accuracy: ${result.accuracy}%\nFeedback: ${result.feedback}`);
+    }
+
+    // MENU TOGGLE
+    const menuBtn = document.getElementById("menuBtn");
+    const menuBox = document.getElementById("menu_option");
+
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menuBox.classList.toggle("hidden");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!menuBtn.contains(e.target) && !menuBox.contains(e.target)) {
+        menuBox.classList.add("hidden");
+      }
+    });
+  </script>
+
+</body>
+</html>
