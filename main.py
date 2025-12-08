@@ -1,5 +1,5 @@
 from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 import os, re, json
 from groq import Groq
 from pydantic import BaseModel
@@ -11,34 +11,65 @@ import random
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-
+# ------------------------------
+# App Initialization
+# ------------------------------
 app = FastAPI()
 load_dotenv()
 nlp = spacy.load("en_core_web_sm")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+# ------------------------------
+# CORS Middleware (mobile-friendly)
+# ------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],       # allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ------------------------------
+# Optional: Static files
+# ------------------------------
+# If you have a static folder, uncomment the next line
+# Make sure the folder exists and is committed to GitHub
+# mkdir static
+# touch static/.gitkeep
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ------------------------------
+# Optional: Limit upload file size (5 MB)
+# ------------------------------
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+@app.middleware("http")
+async def check_file_size(request: Request, call_next):
+    if request.headers.get("content-length"):
+        size = int(request.headers["content-length"])
+        if size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="File too large")
+    response = await call_next(request)
+    return response
+
+# ------------------------------
 # Models
+# ------------------------------
 class SkillInput(BaseModel):
     skills: list
     level: str = "beginner"
     user: str = 'student'
-    interview: str='technical_interview'
+    interview: str = 'technical_interview'
 
 class EvaluateAnswerInput(BaseModel):
     skills: List[str]
     question: str
     answer: str
 
+# ------------------------------
 # Groq API helper
+# ------------------------------
 def generate_with_groq(prompt):
     try:
         response = client.chat.completions.create(
@@ -51,14 +82,18 @@ def generate_with_groq(prompt):
         print("Groq failed:", e)
         return None
 
-# Supported skill keywords
+# ------------------------------
+# Supported skills
+# ------------------------------
 SKILL_KEYWORDS = [
     "python", "java", "c++", "sql", "html", "css", "javascript",
     "machine learning", "deep learning", "nlp", "pandas", "numpy",
     "react", "node", "django", "flask", "git", "docker"
 ]
 
-# Extract text from PDF/DOCX
+# ------------------------------
+# Text extraction from PDF/DOCX
+# ------------------------------
 def extract_text_from_pdf(file):
     text = ""
     with pdfplumber.open(file) as pdf:
@@ -72,7 +107,9 @@ def extract_text_from_docx(file):
     doc = docx.Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
 
-# Extract skills
+# ------------------------------
+# Extract skills (NER + keywords)
+# ------------------------------
 def extract_skills(text):
     text_lower = text.lower()
     found = set([skill for skill in SKILL_KEYWORDS if skill in text_lower])
@@ -83,11 +120,14 @@ def extract_skills(text):
         if ent.label_ in ['SKILL', 'TECHNOLOGY', 'PROGRAMMING_LANGUAGE', 'FRAMEWORK', 'Soft_skills', 'Teamwork']:
             found.add(ent.text.lower())
     return list(found)
+
+# ------------------------------
+# Routes
+# ------------------------------
 @app.get("/")
 def home():
     return FileResponse("Smart_Interview_page.html")
 
-# Routes
 @app.post("/extract_skills")
 async def extract_resume_skills(file: UploadFile = File(...)):
     if file.filename.endswith(".pdf"):
@@ -100,6 +140,9 @@ async def extract_resume_skills(file: UploadFile = File(...)):
     skills = extract_skills(text)
     return {"filename": file.filename, "skills": skills}
 
+# ------------------------------
+# Question generation
+# ------------------------------
 asked_questions_per_session = {}
 
 @app.post("/generate_questions")
@@ -109,7 +152,7 @@ def generate_questions(data: SkillInput):
     user = data.user
     interview = data.interview
 
-    if interview =='HR_Interview':
+    if interview == 'HR_Interview':
         prompt = f"""
 You are an experienced HR interviewer.
 The user is preparing a behavioral/HR interview.
@@ -160,12 +203,11 @@ Return ONLY the question text.
 Do NOT include explanations, examples, numbering, or extra content.
 """
 
-    session_id = "default"  
+    session_id = "default"
     if session_id not in asked_questions_per_session:
         asked_questions_per_session[session_id] = []
 
     previous_questions = asked_questions_per_session[session_id]
-
     question = generate_with_groq(prompt)
 
     # Avoid duplicates
@@ -180,8 +222,9 @@ Do NOT include explanations, examples, numbering, or extra content.
 
     return {"question": question.strip()}
 
-
-
+# ------------------------------
+# Answer evaluation
+# ------------------------------
 @app.post("/evaluate_answer")
 def evaluate_answer(data: EvaluateAnswerInput):
     prompt = f"""
