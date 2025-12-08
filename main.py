@@ -8,6 +8,9 @@ import pdfplumber, docx
 import spacy
 from typing import List
 import random
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
 load_dotenv()
@@ -15,6 +18,13 @@ nlp = spacy.load("en_core_web_lg")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Models
 class SkillInput(BaseModel):
@@ -73,6 +83,9 @@ def extract_skills(text):
         if ent.label_ in ['SKILL', 'TECHNOLOGY', 'PROGRAMMING_LANGUAGE', 'FRAMEWORK', 'Soft_skills', 'Teamwork']:
             found.add(ent.text.lower())
     return list(found)
+@app.get("/")
+def home():
+    return FileResponse("Smart_Interview_page.html")
 
 # Routes
 @app.post("/extract_skills")
