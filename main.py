@@ -17,7 +17,7 @@ load_dotenv()
 nlp = spacy.load("en_core_web_sm")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
