@@ -10,6 +10,7 @@ from typing import List
 import random
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from io import BytesIO  # <-- Added for DOCX upload fix
 
 # ------------------------------
 # App Initialization
@@ -24,7 +25,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # ------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # allow all origins
+    allow_origins=["*"],  # allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -104,7 +105,9 @@ def extract_text_from_pdf(file):
     return text
 
 def extract_text_from_docx(file):
-    doc = docx.Document(file)
+    # DOCX upload fix using BytesIO
+    file_bytes = BytesIO(file.read())
+    doc = docx.Document(file_bytes)
     return "\n".join([para.text for para in doc.paragraphs])
 
 # ------------------------------
@@ -130,9 +133,10 @@ def home():
 
 @app.post("/extract_skills")
 async def extract_resume_skills(file: UploadFile = File(...)):
-    if file.filename.endswith(".pdf"):
+    filename = file.filename.lower()  # <-- case-insensitive check
+    if filename.endswith(".pdf"):
         text = extract_text_from_pdf(file.file)
-    elif file.filename.endswith(".docx"):
+    elif filename.endswith(".docx"):
         text = extract_text_from_docx(file.file)
     else:
         return {"error": "Unsupported file format"}
